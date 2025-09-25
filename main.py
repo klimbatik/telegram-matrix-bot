@@ -43,8 +43,7 @@ def get_admin_keyboard():
 # === ОБРАБОТЧИКИ ===
 @dp.message(Command("start"))
 async def start_handler(message: Message):
-    text = "🌟 Добро пожаловать! Получите бесплатный расчет по матрице судьбы."
-    await message.answer(text, reply_markup=get_calculate_keyboard())
+    await message.answer("🌟 Добро пожаловать! Нажмите кнопку ниже:", reply_markup=get_calculate_keyboard())
 
 @dp.callback_query(F.data == "get_calculation")
 async def handle_get_calculation(callback: CallbackQuery):
@@ -52,14 +51,12 @@ async def handle_get_calculation(callback: CallbackQuery):
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
-            await ask_for_birth_date(callback)
+            users_waiting_for_date.add(user_id)
+            await callback.message.edit_text("📅 Введите дату рождения (ДД.ММ.ГГГГ):")
         else:
-            await callback.message.edit_text(
-                "🙏 ПОДПИШИТЕСЬ НА КАНАЛ для получения расчета!",
-                reply_markup=get_subscription_keyboard()
-            )
+            await callback.message.edit_text("🙏 Подпишитесь на канал!", reply_markup=get_subscription_keyboard())
     except Exception as e:
-        await callback.answer("❌ Ошибка проверки подписки")
+        await callback.answer("❌ Ошибка")
 
 @dp.callback_query(F.data == "check_subscription")
 async def handle_check_subscription(callback: CallbackQuery):
@@ -67,17 +64,12 @@ async def handle_check_subscription(callback: CallbackQuery):
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
-            await ask_for_birth_date(callback)
+            users_waiting_for_date.add(user_id)
+            await callback.message.edit_text("📅 Введите дату рождения (ДД.ММ.ГГГГ):")
         else:
             await callback.answer("❌ Вы ещё не подписались!")
     except:
-        await callback.answer("❌ Ошибка проверки")
-
-async def ask_for_birth_date(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    users_waiting_for_date.add(user_id)
-    await callback.message.edit_text("📅 Введите дату рождения в формате ДД.ММ.ГГГГ:")
-    await callback.answer("✅ Введите дату рождения")
+        await callback.answer("❌ Ошибка")
 
 @dp.message(F.text)
 async def handle_birth_date(message: Message):
@@ -90,13 +82,12 @@ async def handle_birth_date(message: Message):
         birth_date = datetime.strptime(message.text.strip(), "%d.%m.%Y").date()
         username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
         
-        # Отправляем уведомление вам
         await bot.send_message(
             YOUR_TELEGRAM_ID, 
             f"👤 НОВАЯ ЗАЯВКА!\nПользователь: {username}\nДата: {birth_date.strftime('%d.%m.%Y')}"
         )
         
-        await message.answer("✅ Заявка принята! Я свяжусь с вами скоро.")
+        await message.answer("✅ Заявка принята! Свяжусь с вами скоро.")
         users_waiting_for_date.discard(user_id)
         
     except ValueError:
@@ -108,7 +99,7 @@ async def admin_panel(message: Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
         return
     
-    stats_text = f"📊 Панель управления\nКанал: {CHANNEL_USERNAME}\nОжидают ввод даты: {len(users_waiting_for_date)}"
+    stats_text = f"📊 Панель управления\nКанал: {CHANNEL_USERNAME}"
     await message.answer(stats_text, reply_markup=get_admin_keyboard())
 
 @dp.callback_query(F.data == "create_post")
@@ -124,35 +115,57 @@ async def create_channel_post(callback: CallbackQuery):
     except Exception as e:
         await callback.answer(f"❌ Ошибка: {e}")
 
-@dp.callback_query(F.data == "refresh_stats")
-async def refresh_stats(callback: CallbackQuery):
-    if callback.from_user.id != YOUR_TELEGRAM_ID:
-        return
-    
-    stats_text = f"📊 Статистика обновлена\nОжидают ввод даты: {len(users_waiting_for_date)}"
-    await callback.message.edit_text(stats_text, reply_markup=get_admin_keyboard())
-    await callback.answer("✅ Статистика обновлена")
+# === ПРИНУДИТЕЛЬНЫЙ ЗАПУСК ===
+async def start_bot_with_retry():
+    """Запуск бота с принудительным прекращением других сессий"""
+    try:
+        # Принудительно закрываем возможные другие сессии
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ Вебхук удален, другие сессии прекращены")
+        
+        # Ждем секунду для очистки
+        await asyncio.sleep(2)
+        
+        # Запускаем polling
+        logger.info("🚀 Запускаем бота...")
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска: {e}")
+        # Перезапуск через 10 секунд
+        await asyncio.sleep(10)
+        await start_bot_with_retry()
 
-# === ПРОСТОЙ HTTP-СЕРВЕР ===
-async def handle_request(request):
-    return web.Response(text="Bot is running")
-
-async def start_web_server():
+async def simple_web_server():
+    """Простой веб-сервер для Render"""
     app = web.Application()
-    app.router.add_get('/', handle_request)
-    app.router.add_get('/health', handle_request)
+    
+    async def health_check(request):
+        return web.Response(text='Bot is alive!')
+    
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', int(os.environ.get("PORT", 10000)))
+    
+    port = int(os.environ.get('PORT', 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
+    
+    logger.info(f"🌐 HTTP-сервер запущен на порту {port}")
 
 async def main():
+    """Главная функция"""
+    logger.info("🎯 Инициализация бота...")
+    
     # Запускаем веб-сервер в фоне
-    asyncio.create_task(start_web_server())
+    asyncio.create_task(simple_web_server())
     
     # Запускаем бота
-    logger.info("✅ Бот запускается...")
-    await dp.start_polling(bot)
+    await start_bot_with_retry()
 
 if __name__ == "__main__":
+    # Принудительно убиваем возможные старые процессы
+    logger.info("🔄 Принудительный перезапуск бота...")
     asyncio.run(main())

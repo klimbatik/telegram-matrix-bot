@@ -4,7 +4,7 @@ from aiogram.utils import executor
 
 # === Загрузка переменных окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # Должен начинаться с "@", например: "@my_channel"
 YOUR_TELEGRAM_ID_STR = os.getenv("YOUR_TELEGRAM_ID")
 
 # Проверка наличия всех переменных
@@ -31,7 +31,8 @@ async def start_handler(message: types.Message):
     user_id = user.id
 
     try:
-        chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        # Убираем "@" из CHANNEL_USERNAME для get_chat_member
+        chat_member = await bot.get_chat_member(CHANNEL_USERNAME[1:], user_id)
         if chat_member.status in ['member', 'administrator', 'creator']:
             awaiting_birth_date.add(user_id)
             await message.answer(
@@ -62,20 +63,25 @@ async def handle_text(message: types.Message):
 
     if user_id in awaiting_birth_date:
         birth_date = message.text.strip()
-        if len(birth_date) >= 8 and birth_date.replace('.', '').replace(' ', '').isdigit():
-            username = f"@{user.username}" if user.username else f"ID{user_id}"
-            await bot.send_message(
-                YOUR_TELEGRAM_ID,
-                f"🆕 Новый лид!\n\n"
-                f"Пользователь: {username}\n"
-                f"Дата рождения: <code>{birth_date}</code>\n\n"
-                f"Теперь вы можете написать ему вручную.",
-                parse_mode="HTML"
-            )
-            awaiting_birth_date.discard(user_id)
-            await message.answer("✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.")
-        else:
-            await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
+        # Простая проверка формата дд.мм.гггг
+        parts = birth_date.split('.')
+        if len(parts) == 3 and all(part.isdigit() for part in parts):
+            day, month, year = parts
+            if len(day) == 2 and len(month) == 2 and len(year) == 4:
+                username = f"@{user.username}" if user.username else f"ID{user_id}"
+                await bot.send_message(
+                    YOUR_TELEGRAM_ID,
+                    f"🆕 Новый лид!\n\n"
+                    f"Пользователь: {username}\n"
+                    f"Дата рождения: <code>{birth_date}</code>\n\n"
+                    f"Теперь вы можете написать ему вручную.",
+                    parse_mode="HTML"
+                )
+                awaiting_birth_date.discard(user_id)
+                await message.answer("✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.")
+                return
+
+        await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
     else:
         await start_handler(message)
 
@@ -101,7 +107,7 @@ async def publish_offer(message: types.Message):
     )
     await message.answer("✅ Сообщение с кнопкой отправлено в канал!")
 
-# === ЗАПУСК БОТА — ОБЯЗАТЕЛЬНО! ===
+# === ЗАПУСК БОТА ===
 if __name__ == '__main__':
     print("✅ Бот @LenaMusBot запущен!")
     executor.start_polling(dp, skip_updates=True)

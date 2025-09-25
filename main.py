@@ -116,8 +116,10 @@ async def publish_offer(message: Message):
 async def main():
     logging.info("✅ Бот запущен!")
     await dp.start_polling(bot)
-    if name == "main":
-        asyncio.run(main())
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
 
 
 

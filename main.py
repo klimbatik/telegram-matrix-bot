@@ -117,4 +117,5 @@ async def main():
     logging.info("✅ Бот запущен!")
     await dp.start_polling(bot)
     if name == "main":
-    asyncio.run(main())
+        asyncio.run(main())
+

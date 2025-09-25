@@ -1,6 +1,5 @@
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
+from aiogram import Bot, Dispatcher, types, executor  # ✅ Исправлено!
 
 # === Загрузка переменных окружения БЕЗ немедленного преобразования ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -100,3 +99,4 @@ async def publish_offer(message: types.Message):
 if __name__ == '__main__':
     print("✅ Бот @LenaMusBot запущен!")
     executor.start_polling(dp, skip_updates=True)
+

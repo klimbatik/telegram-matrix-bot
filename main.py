@@ -1,7 +1,8 @@
+import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
 
-# === Загрузка переменных окружения БЕЗ немедленного преобразования ===
+# === Загрузка переменных окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")
 YOUR_TELEGRAM_ID_STR = os.getenv("YOUR_TELEGRAM_ID")
@@ -10,17 +11,20 @@ YOUR_TELEGRAM_ID_STR = os.getenv("YOUR_TELEGRAM_ID")
 if not all([BOT_TOKEN, CHANNEL_USERNAME, YOUR_TELEGRAM_ID_STR]):
     raise ValueError("❌ Отсутствуют переменные окружения: BOT_TOKEN, CHANNEL_USERNAME или YOUR_TELEGRAM_ID")
 
-# Теперь безопасно преобразуем ID в число
+# Преобразуем ID в число
 try:
     YOUR_TELEGRAM_ID = int(YOUR_TELEGRAM_ID_STR)
 except ValueError:
-    raise ValueError("❌ YOUR_TELEGRAM_ID должен быть целым числом!")
+    raise ValueError("❌ YOUR_TELEGRAM_ID должен быть целым числом (например, 1030370280)")
 
+# === Инициализация бота ===
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
+# Список пользователей, ожидающих ввод даты рождения
 awaiting_birth_date = set()
 
+# === /start — основной сценарий ===
 @dp.message_handler(commands=['start'])
 async def start_handler(message: types.Message):
     user = message.from_user
@@ -50,6 +54,7 @@ async def start_handler(message: types.Message):
         print("Ошибка проверки подписки:", e)
         await message.answer("Произошла ошибка. Попробуйте позже.")
 
+# === Обработка текста (дата рождения) ===
 @dp.message_handler(content_types=types.ContentType.TEXT)
 async def handle_text(message: types.Message):
     user = message.from_user
@@ -74,6 +79,7 @@ async def handle_text(message: types.Message):
     else:
         await start_handler(message)
 
+# === /publish — отправка сообщения с кнопкой в канал (только для вас) ===
 @dp.message_handler(commands=['publish'])
 async def publish_offer(message: types.Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
@@ -95,9 +101,7 @@ async def publish_offer(message: types.Message):
     )
     await message.answer("✅ Сообщение с кнопкой отправлено в канал!")
 
-# === ИСПРАВЛЕННЫЙ БЛОК ЗАПУСКА ===
+# === ЗАПУСК БОТА — ОБЯЗАТЕЛЬНО! ===
 if __name__ == '__main__':
     print("✅ Бот @LenaMusBot запущен!")
     executor.start_polling(dp, skip_updates=True)
-
-

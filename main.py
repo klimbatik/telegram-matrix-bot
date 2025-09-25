@@ -1,7 +1,13 @@
 import os
 import asyncio
+import logging
+from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+
+# === Настройка логирования ===
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # === Загрузка переменных окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -14,22 +20,24 @@ if not all([BOT_TOKEN, CHANNEL_USERNAME, YOUR_TELEGRAM_ID_STR]):
 try:
     YOUR_TELEGRAM_ID = int(YOUR_TELEGRAM_ID_STR)
 except ValueError:
-    raise ValueError("❌ YOUR_TELEGRAM_ID должен быть целым числом")
+    raise ValueError("❌ YOUR_TELEGRAM_ID должен быть целым числом (например, 1030370280)")
 
 # === Инициализация бота ===
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Список ожидающих ввод даты
+# Список пользователей, ожидающих ввод даты рождения
 awaiting_birth_date = set()
+
 
 # === /start — основной сценарий ===
 @dp.message(F.text == "/start")
 async def start_handler(message: Message):
     user_id = message.from_user.id
     try:
+        # Проверка подписки (передаём CHANNEL_USERNAME с @)
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if chat_member.status in ['member', 'administrator', 'creator']:
+        if chat_member.status in ["member", "administrator", "creator"]:
             awaiting_birth_date.add(user_id)
             await message.answer(
                 "✨ Отлично! Чтобы сделать расчёт по матрице судьбы, напишите вашу дату рождения в формате:\n\n"
@@ -41,7 +49,7 @@ async def start_handler(message: Message):
             markup = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
                     text="Подписаться на канал",
-                    url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
+                    url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"  # Без пробелов!
                 )]
             ])
             await message.answer(
@@ -49,34 +57,40 @@ async def start_handler(message: Message):
                 reply_markup=markup
             )
     except Exception as e:
-        print("Ошибка проверки подписки:", e)
-        await message.answer("Произошла ошибка. Попробуйте позже.")
+        logger.error("Ошибка проверки подписки: %s", e)
+        await message.answer("⚠️ Ошибка при проверке подписки. Попробуйте позже.")
+
 
 # === Обработка даты рождения ===
 @dp.message(F.text)
 async def handle_text(message: Message):
     user_id = message.from_user.id
     if user_id in awaiting_birth_date:
-        birth_date = message.text.strip()
-        parts = birth_date.split('.')
-        if len(parts) == 3 and all(p.isdigit() for p in parts):
-            day, month, year = parts
-            if len(day) == 2 and len(month) == 2 and len(year) == 4:
-                username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
-                await bot.send_message(
-                    YOUR_TELEGRAM_ID,
-                    f"🆕 Новый лид!\n\n"
-                    f"Пользователь: {username}\n"
-                    f"Дата рождения: <code>{birth_date}</code>\n\n"
-                    f"Теперь вы можете написать ему вручную.",
-                    parse_mode="HTML"
-                )
-                awaiting_birth_date.discard(user_id)
-                await message.answer("✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.")
-                return
-        await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
+        text = message.text.strip()
+        try:
+            birth_date = datetime.strptime(text, "%d.%m.%Y").date()
+        except ValueError:
+            await message.answer("❌ Введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
+            return
 
-# === /publish — отправка сообщения с кнопкой в канал ===
+        username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
+        await bot.send_message(
+            YOUR_TELEGRAM_ID,
+            f"🆕 Новый лид!\n\n"
+            f"Пользователь: {username}\n"
+            f"Дата рождения: <code>{birth_date.strftime('%d.%m.%Y')}</code>\n\n"
+            f"Теперь вы можете написать ему вручную.",
+            parse_mode="HTML"
+        )
+
+        awaiting_birth_date.discard(user_id)
+        await message.answer("✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.")
+    else:
+        # Если пользователь не в процессе — перезапускаем сценарий
+        await start_handler(message)
+
+
+# === /publish — отправка сообщения с кнопкой в канал (только для вас) ===
 @dp.message(F.text == "/publish")
 async def publish_offer(message: Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
@@ -88,6 +102,7 @@ async def publish_offer(message: Message):
             url="https://t.me/LenaMusBot?start=matrix"
         )]
     ])
+
     await bot.send_message(
         CHANNEL_USERNAME,
         "🔮 Бесплатный расчёт по матрице судьбы!\n\n"
@@ -97,10 +112,12 @@ async def publish_offer(message: Message):
     )
     await message.answer("✅ Сообщение с кнопкой отправлено в канал!")
 
-# === ЗАПУСК БОТА ===
+
+# === Запуск бота ===
 async def main():
-    print("✅ Бот @LenaMusBot запущен!")
+    logger.info("✅ Бот @LenaMusBot запущен!")
     await dp.start_polling(bot)
 
+# ✅ Правильное условие запуска
 if __name__ == "__main__":
     asyncio.run(main())

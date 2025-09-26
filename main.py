@@ -24,10 +24,11 @@ users_waiting_for_date = set()
 
 # === КЛАВИАТУРЫ ===
 
-# Кнопка для поста в канале
+# Кнопка для поста в канале (ИСПРАВЛЕНА!)
 def get_channel_keyboard():
+    bot_username = "ElenaMusBot"  # Указываем напрямую username бота
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=channel")]
+        [InlineKeyboardButton(text="📊 ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{bot_username}?start=channel")]
     ])
 
 # Кнопка для проверки подписки в боте
@@ -48,10 +49,10 @@ def get_admin_keyboard():
 
 @dp.message(Command("start"))
 async def start_handler(message: Message):
-    """Обработчик команды /start - когда клиент приходит из канала"""
+    """Обработчик команды /start"""
     # Проверяем, пришел ли пользователь из канала
-    if message.text.endswith('channel'):
-        # Пользователь пришел из канала - сразу проверяем подписку
+    if "channel" in message.text:
+        # Пользователь пришел из канала - проверяем подписку
         user_id = message.from_user.id
         
         try:
@@ -149,6 +150,7 @@ async def handle_birth_date(message: Message):
 async def admin_panel(message: Message):
     """Админ-панель - создание поста в канале"""
     if message.from_user.id != YOUR_TELEGRAM_ID:
+        await message.answer("❌ У вас нет доступа к админ-панели")
         return
     
     stats_text = f"📊 Админ-панель\nОжидают ввод даты: {len(users_waiting_for_date)}"
@@ -158,6 +160,7 @@ async def admin_panel(message: Message):
 async def publish_post(callback: CallbackQuery):
     """Публикация поста в канале"""
     if callback.from_user.id != YOUR_TELEGRAM_ID:
+        await callback.answer("❌ Нет доступа")
         return
     
     post_text = """
@@ -176,6 +179,7 @@ async def publish_post(callback: CallbackQuery):
 async def refresh_stats(callback: CallbackQuery):
     """Обновление статистики"""
     if callback.from_user.id != YOUR_TELEGRAM_ID:
+        await callback.answer("❌ Нет доступа")
         return
     
     stats_text = f"📊 Статистика обновлена\nОжидают ввод даты: {len(users_waiting_for_date)}"

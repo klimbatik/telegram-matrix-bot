@@ -148,18 +148,14 @@ async def publish_post(callback: CallbackQuery):
         return
 
     post_text = """
-🔮 Бесплатный расчёт по матрице судьбы!
-
-Узнайте своё предназначение, кармические задачи и сильные стороны.
-
-Нажмите кнопку ниже, чтобы получить расчёт.
+МОЙ ТЕКСТ
     """
 
-    bot_username = "LenaMusBot"  # Укажите точный юзернейм вашего бота
+    bot_username = "ElenaMusBot"  # Ваш бот ElenaMusBot
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="ПОЛУЧИТЬ РАСЧЁТ",
-            url=f"https://t.me/{bot_username}?start=matrix"
+            text="ПОЛУЧИТЬ РАСЧЕТ",
+            url=f"https://t.me/{bot_username}?start=guide"
         )]
     ])
 

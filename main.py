@@ -175,19 +175,25 @@ async def publish_post_handler(callback: CallbackQuery):
 async def health_check(request):
     return web.Response(text="OK")
 
-async def start_bot():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
+async def start_http_server():
     app = web.Application()
     app.router.add_get('/health', health_check)
-
+    app.router.add_get('/', health_check)  # Добавляем корневой путь тоже
+    
     port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"HTTP server started on port {port}")
 
-    async def main():
-        await asyncio.gather(
-            web._run_app(app, host='0.0.0.0', port=port),
-            start_bot()
-        )
+async def main():
+    # Запускаем HTTP-сервер и бота параллельно
+    await asyncio.gather(
+        start_http_server(),
+        dp.start_polling(bot)
+    )
 
+if __name__ == "__main__":
     asyncio.run(main())
+

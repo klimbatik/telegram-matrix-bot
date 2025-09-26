@@ -29,10 +29,10 @@ def get_subscription_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="📢 Подписаться на канал",
-            url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"  # УБРАЛ ПРОБЕЛЫ
+            url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
         )],
         [InlineKeyboardButton(
-            text="✅ Я подписался",
+            text="✅ Я подписался", 
             callback_data="check_subscription"
         )]
     ])
@@ -41,7 +41,7 @@ def get_back_to_channel_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="⬅️ Вернуться в канал",
-            url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"  # УБРАЛ ПРОБЕЛЫ
+            url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
         )]
     ])
 
@@ -76,10 +76,9 @@ async def start_handler(message: Message):
         logger.error("Ошибка проверки подписки: %s", e)
         await message.answer("❌ Ошибка. Попробуйте позже.")
 
-# === НОВЫЙ ОБРАБОТЧИК: проверка подписки по кнопке "Я подписался" ===
-
+# === Обработка кнопки "Я подписался" ===
 @dp.callback_query(F.data == "check_subscription")
-async def check_subscription(callback: CallbackQuery):
+async def check_subscription_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
@@ -92,10 +91,10 @@ async def check_subscription(callback: CallbackQuery):
                 parse_mode="HTML"
             )
         else:
-            await callback.answer("❌ Вы ещё не подписаны на канал!", show_alert=True)
+            await callback.answer("❌ Вы ещё не подписались на канал!", show_alert=True)
     except Exception as e:
         logger.error("Ошибка проверки подписки: %s", e)
-        await callback.answer("❌ Ошибка. Попробуйте позже.", show_alert=True)
+        await callback.answer("❌ Ошибка проверки. Попробуйте позже.")
 
 # === Обработка даты рождения ===
 
@@ -143,24 +142,21 @@ async def admin_panel(message: Message):
     ])
     await message.answer(stats_text, reply_markup=keyboard)
 
+# === ОБРАБОТЧИК КНОПКИ "ОПУБЛИКОВАТЬ ПОСТ" ===
 @dp.callback_query(F.data == "publish_post")
-async def publish_post(callback: CallbackQuery):
+async def publish_post_handler(callback: CallbackQuery):
     if callback.from_user.id != YOUR_TELEGRAM_ID:
         return
 
     post_text = """
-🔮 Бесплатный расчёт по матрице судьбы!
-
-Узнайте своё предназначение, кармические задачи и сильные стороны.
-
-Нажмите кнопку ниже, чтобы получить расчёт.
+МОЙ ТЕКСТ
     """
 
-    bot_username = "ELenaMusBot"
+    bot_username = "ElenaMusBot"  # Ваш бот ElenaMusBot
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="ПОЛУЧИТЬ РАСЧЁТ",
-            url=f"https://t.me/{bot_username}?start=matrix"  # УБРАЛ ПРОБЕЛЫ
+            text="ПОЛУЧИТЬ РАСЧЕТ",
+            url=f"https://t.me/{bot_username}?start=guide"
         )]
     ])
 
@@ -192,4 +188,3 @@ if __name__ == "__main__":
         )
 
     asyncio.run(main())
-

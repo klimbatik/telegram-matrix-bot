@@ -156,7 +156,7 @@ async def publish_post(callback: CallbackQuery):
 Нажмите кнопку ниже, чтобы получить расчёт.
     """
 
-    bot_username = "LenaMusBot"
+    bot_username = "ELenaMusBot"
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="ПОЛУЧИТЬ РАСЧЁТ",
@@ -192,3 +192,4 @@ if __name__ == "__main__":
         )
 
     asyncio.run(main())
+

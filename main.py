@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiohttp import web
 
 # === Логирование ===
@@ -13,185 +13,181 @@ logger = logging.getLogger(__name__)
 
 # === Переменные окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # Например: "@LenaMustest"
-YOUR_TELEGRAM_ID = int(os.getenv("YOUR_TELEGRAM_ID"))
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # "@LenaMustest"
+YOUR_TELEGRAM_ID = int(os.getenv("YOUR_TELEGRAM_ID"))  # 1030370280
 
-# === Инициализация бота ===
+# === Инициализация ===
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# Хранилище для отслеживания подписчиков
-subscribed_users = set()
+# Списки состояний
+awaiting_birth_date = set()
 
-# === КЛАВИАТУРЫ ===
+# === Вспомогательные клавиатуры ===
 
-# Основная клавиатура с кнопкой "ПОЛУЧИТЬ РАСЧЕТ"
-def get_main_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", callback_data="get_guide")]
-    ])
-
-# Клавиатура с проверкой подписки
 def get_subscription_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}")],
-        [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_subscription")]
+        [InlineKeyboardButton(
+            text="📢 Подписаться на канал",
+            url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
+        )],
+        [InlineKeyboardButton(
+            text="✅ Я подписался", 
+            callback_data="check_subscription"
+        )]
     ])
 
-# === ОБРАБОТЧИКИ ===
+def get_back_to_channel_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="⬅️ Вернуться в канал",
+            url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
+        )]
+    ])
 
-@dp.message(Command("start"))
+# === Обработчик /start (включая deep link) ===
+
+@dp.message(CommandStart())
 async def start_handler(message: Message):
-    """Обработчик команды /start"""
-    welcome_text = """
-🌟 Добро пожаловать! 
+    user_id = message.from_user.id
 
-Я помогу вам получить полезный гайд по матрице судьбы.
+    # Админ получает панель
+    if user_id == YOUR_TELEGRAM_ID:
+        await admin_panel(message)
+        return
 
-Нажмите кнопку ниже, чтобы получить доступ к материалам:
-    """
-    
-    await message.answer(welcome_text, reply_markup=get_main_keyboard())
-
-@dp.callback_query(F.data == "get_guide")
-async def handle_get_guide(callback: CallbackQuery):
-    """Обработчик кнопки ПОЛУЧИТЬ РАСЧЕТ"""
-    user_id = callback.from_user.id
-    
-    # Проверяем подписку
+    # Обычный пользователь — проверяем подписку
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
-            # Пользователь подписан - выдаём гайд
-            await send_guide(callback)
-            subscribed_users.add(user_id)
+            awaiting_birth_date.add(user_id)
+            await message.answer(
+                "✨ Отлично! Чтобы сделать расчёт по матрице судьбы, напишите вашу дату рождения в формате:\n\n"
+                "<code>дд.мм.гггг</code>\n\n"
+                "Например: <code>15.08.1990</code>",
+                parse_mode="HTML"
+            )
         else:
-            # Пользователь не подписан - просим подписаться
-            await callback.message.edit_text(
-                "📋 Чтобы получить гайд, пожалуйста, подпишитесь на наш канал:\n\n"
-                f"➡️ {CHANNEL_USERNAME}\n\n"
-                "После подписки нажмите кнопку ниже:",
+            await message.answer(
+                "🙏 Пожалуйста, подпишитесь на канал, чтобы получить расчёт бесплатно!",
                 reply_markup=get_subscription_keyboard()
             )
     except Exception as e:
-        logger.error(f"Ошибка проверки подписки: {e}")
-        await callback.answer("❌ Ошибка проверки подписки. Попробуйте позже.")
+        logger.error("Ошибка проверки подписки: %s", e)
+        await message.answer("❌ Ошибка. Попробуйте позже.")
 
+# === Обработка кнопки "Я подписался" ===
 @dp.callback_query(F.data == "check_subscription")
-async def handle_check_subscription(callback: CallbackQuery):
-    """Проверка подписки после нажатия кнопки 'Я подписался'"""
+async def check_subscription_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
-    
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
-            # Успешная подписка - выдаём гайд
-            await send_guide(callback)
-            subscribed_users.add(user_id)
+            awaiting_birth_date.add(user_id)
+            await callback.message.edit_text(
+                "✨ Отлично! Чтобы сделать расчёт по матрице судьбы, напишите вашу дату рождения в формате:\n\n"
+                "<code>дд.мм.гггг</code>\n\n"
+                "Например: <code>15.08.1990</code>",
+                parse_mode="HTML"
+            )
         else:
-            # Пользователь всё ещё не подписан
-            await callback.answer("❌ Вы ещё не подписались на канал!")
+            await callback.answer("❌ Вы ещё не подписались на канал!", show_alert=True)
     except Exception as e:
-        logger.error(f"Ошибка проверки подписки: {e}")
+        logger.error("Ошибка проверки подписки: %s", e)
         await callback.answer("❌ Ошибка проверки. Попробуйте позже.")
 
-async def send_guide(callback: CallbackQuery):
-    """Отправка гайда пользователю"""
-    guide_text = """
-📚 **Ваш гайд готов!**
+# === Обработка даты рождения ===
 
-Вот ссылка на материалы: [ссылка на ваш гайд]
+@dp.message(F.text)
+async def handle_text(message: Message):
+    user_id = message.from_user.id
 
-Также вы можете:
-• Получить персональный расчёт
-• Задать вопросы
-
-Для нового гайда нажмите /start
-    """
-    
-    # Удаляем предыдущее сообщение с кнопками
-    try:
-        await callback.message.delete()
-    except:
-        pass
-    
-    # Отправляем гайд
-    await callback.message.answer(guide_text)
-    await callback.answer("✅ Гайд отправлен!")
-
-# === УПРАВЛЕНИЕ СООБЩЕНИЯМИ В КАНАЛЕ ===
-
-@dp.message(F.chat.type == "channel")
-async def handle_channel_messages(message: Message):
-    """Автоматическое удаление служебных сообщений в канале"""
-    # Удаляем сообщения о смене названия канала
-    if message.service and any(keyword in str(message.service) for keyword in ["title", "name", "назван"]):
-        try:
-            await message.delete()
-            logger.info("🗑 Удалено служебное сообщение о смене названия")
-        except Exception as e:
-            logger.error(f"Ошибка удаления сообщения: {e}")
-
-# === ПАНЕЛЬ АДМИНИСТРАТОРА ===
-
-@dp.message(Command("admin"))
-async def admin_panel(message: Message):
-    """Панель управления для администратора"""
-    if message.from_user.id != YOUR_TELEGRAM_ID:
+    # Админ — игнорируем текст
+    if user_id == YOUR_TELEGRAM_ID:
         return
-    
+
+    if user_id in awaiting_birth_date:
+        birth_date = message.text.strip()
+        if len(birth_date) >= 8 and birth_date.replace('.', '').replace(' ', '').isdigit():
+            username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
+            await bot.send_message(
+                YOUR_TELEGRAM_ID,
+                f"🆕 Новый лид!\n\n"
+                f"Пользователь: {username}\n"
+                f"Дата рождения: <code>{birth_date}</code>\n\n"
+                f"Теперь вы можете написать ему вручную.",
+                parse_mode="HTML"
+            )
+            awaiting_birth_date.discard(user_id)
+            await message.answer(
+                "✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.",
+                reply_markup=get_back_to_channel_keyboard()
+            )
+        else:
+            await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
+    else:
+        # Если не в процессе — перезапускаем сценарий
+        await start_handler(message)
+
+# === Админ-панель ===
+
+async def admin_panel(message: Message):
     stats_text = f"""
-  Статистика бота
-• Подписчиков получивших гайд: {len(subscribed_users)}
-• Канал: {CHANNEL_USERNAME}
+📊 Админ-панель
+Ожидают ввод даты: {len(awaiting_birth_date)}
+Канал: {CHANNEL_USERNAME}
     """
-    
-    admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Опубликовать пост", callback_data="publish_post")],
-        [InlineKeyboardButton(text="🔄 Обновить статистику", callback_data="refresh_stats")]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 Опубликовать пост", callback_data="publish_post")]
     ])
-    
-    await message.answer(stats_text, reply_markup=admin_keyboard)
+    await message.answer(stats_text, reply_markup=keyboard)
 
 @dp.callback_query(F.data == "publish_post")
-async def publish_guide_offer(callback: CallbackQuery):
-    """Публикация предложения в канал"""
+async def publish_post(callback: CallbackQuery):
     if callback.from_user.id != YOUR_TELEGRAM_ID:
         return
-    
+
     post_text = """
-МОЙ ТЕКСТ
+🔮 Бесплатный расчёт по матрице судьбы!
+
+Узнайте своё предназначение, кармические задачи и сильные стороны.
+
+Нажмите кнопку ниже, чтобы получить расчёт.
     """
-    
-    channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=guide")]
+
+    bot_username = "LenaMusBot"  # Укажите точный юзернейм вашего бота
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="ПОЛУЧИТЬ РАСЧЁТ",
+            url=f"https://t.me/{bot_username}?start=matrix"
+        )]
     ])
-    
+
     try:
-        await bot.send_message(CHANNEL_USERNAME, post_text, reply_markup=channel_keyboard)
+        await bot.send_message(CHANNEL_USERNAME, post_text, reply_markup=markup)
         await callback.answer("✅ Пост опубликован в канале!")
     except Exception as e:
-        await callback.answer(f"❌ Ошибка: {e}")
+        logger.error("Ошибка публикации: %s", e)
+        await callback.answer("❌ Не удалось опубликовать пост.")
 
 # === HTTP-сервер для Render ===
+
 async def health_check(request):
-    return web.Response(text="✅ Bot is running!")
+    return web.Response(text="OK")
 
 async def start_bot():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Веб-сервер для Render
     app = web.Application()
     app.router.add_get('/health', health_check)
-    
+
     port = int(os.environ.get("PORT", 10000))
-    
+
     async def main():
         await asyncio.gather(
             web._run_app(app, host='0.0.0.0', port=port),
             start_bot()
         )
-    
-    asyncio.run(main())
 
+    asyncio.run(main())

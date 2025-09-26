@@ -25,10 +25,10 @@ subscribed_users = set()
 
 # === КЛАВИАТУРЫ ===
 
-# Основная клавиатура с кнопкой "ЗАБРАТЬ ГАЙД"
+# Основная клавиатура с кнопкой "ПОЛУЧИТЬ РАСЧЕТ"
 def get_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ЗАБРАТЬ ГАЙД", callback_data="get_guide")]
+        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", callback_data="get_guide")]
     ])
 
 # Клавиатура с проверкой подписки
@@ -55,7 +55,7 @@ async def start_handler(message: Message):
 
 @dp.callback_query(F.data == "get_guide")
 async def handle_get_guide(callback: CallbackQuery):
-    """Обработчик кнопки ЗАБРАТЬ ГАЙД"""
+    """Обработчик кнопки ПОЛУЧИТЬ РАСЧЕТ"""
     user_id = callback.from_user.id
     
     # Проверяем подписку
@@ -141,7 +141,7 @@ async def admin_panel(message: Message):
         return
     
     stats_text = f"""
-📊 **Статистика бота:**
+  Статистика бота
 • Подписчиков получивших гайд: {len(subscribed_users)}
 • Канал: {CHANNEL_USERNAME}
     """
@@ -160,18 +160,11 @@ async def publish_guide_offer(callback: CallbackQuery):
         return
     
     post_text = """
-🎁 **БЕСПЛАТНЫЙ ГАЙД по матрице судьбы!**
-
-Узнайте:
-• Ваши сильные стороны
-• Кармические задачи
-• Предназначение по дате рождения
-
-Получите гайд прямо сейчас! 👇
+МОЙ ТЕКСТ
     """
     
     channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ЗАБРАТЬ ГАЙД", url=f"https://t.me/{(await bot.get_me()).username}?start=guide")]
+        [InlineKeyboardButton(text="ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=guide")]
     ])
     
     try:
@@ -201,3 +194,4 @@ if __name__ == "__main__":
         )
     
     asyncio.run(main())
+

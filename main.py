@@ -24,90 +24,92 @@ users_waiting_for_date = set()
 
 # === КЛАВИАТУРЫ ===
 
-def get_main_keyboard():
+# Кнопка для поста в канале
+def get_channel_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", callback_data="get_calculation")]
+        [InlineKeyboardButton(text="📊 ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=channel")]
     ])
 
+# Кнопка для проверки подписки в боте
 def get_subscription_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}")],
         [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_subscription")]
     ])
 
+# Админ-панель
 def get_admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Опубликовать пост", callback_data="publish_post")],
         [InlineKeyboardButton(text="🔄 Обновить статистику", callback_data="refresh_stats")]
     ])
 
-# === ОБРАБОТЧИКИ ===
+# === ОСНОВНЫЕ ОБРАБОТЧИКИ ===
 
 @dp.message(Command("start"))
 async def start_handler(message: Message):
-    """Обработчик команды /start - сразу проверяем подписку"""
-    user_id = message.from_user.id
+    """Обработчик команды /start - когда клиент приходит из канала"""
+    # Проверяем, пришел ли пользователь из канала
+    if message.text.endswith('channel'):
+        # Пользователь пришел из канала - сразу проверяем подписку
+        user_id = message.from_user.id
+        
+        try:
+            chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
+            if chat_member.status in ["member", "administrator", "creator"]:
+                # Подписан - просим дату рождения
+                users_waiting_for_date.add(user_id)
+                await message.answer(
+                    "📅 **Для расчета введите вашу дату рождения в формате: ДД.ММ.ГГГГ**\n\n"
+                    "Например: 15.09.1985"
+                )
+            else:
+                # Не подписан - просим подписаться
+                await message.answer(
+                    "🙏 **Для получения расчета подпишитесь на наш канал**\n\n"
+                    f"Канал: {CHANNEL_USERNAME}",
+                    reply_markup=get_subscription_keyboard()
+                )
+        except Exception as e:
+            await message.answer("❌ Ошибка проверки подписки")
     
-    # Сразу проверяем подписку при старте
-    try:
-        chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if chat_member.status in ["member", "administrator", "creator"]:
-            # Уже подписан - сразу просим дату
-            users_waiting_for_date.add(user_id)
-            await message.answer(
-                "✅ **Вы подписаны на канал!**\n\n"
-                "📅 Введите вашу дату рождения в формате: **ДД.ММ.ГГГГ**\n"
-                "Например: 15.09.1985"
-            )
-        else:
-            # Не подписан - просим подписаться
-            await message.answer(
-                "🙏 **Для получения расчета подпишитесь на наш канал**\n\n"
-                f"Канал: {CHANNEL_USERNAME}\n\n"
-                "После подписки нажмите кнопку:",
-                reply_markup=get_subscription_keyboard()
-            )
-    except Exception as e:
-        await message.answer("❌ Ошибка проверки подписки. Попробуйте позже.")
+    else:
+        # Обычный старт - просто приветствие
+        await message.answer(
+            "🌟 Добро пожаловать! Нажмите кнопку для получения расчета:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📊 ПОЛУЧИТЬ РАСЧЕТ", callback_data="get_calculation")]
+            ])
+        )
 
 @dp.callback_query(F.data == "get_calculation")
 async def handle_get_calculation(callback: CallbackQuery):
-    """Обработчик кнопки ПОЛУЧИТЬ РАСЧЕТ"""
+    """Обработчик кнопки ПОЛУЧИТЬ РАСЧЕТ внутри бота"""
     user_id = callback.from_user.id
     
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
-            # Подписан - просим дату
             users_waiting_for_date.add(user_id)
-            await callback.message.edit_text(
-                "✅ **Вы подписаны!**\n\n"
-                "📅 Введите дату рождения (ДД.ММ.ГГГГ):"
-            )
+            await callback.message.edit_text("📅 Введите дату рождения (ДД.ММ.ГГГГ):")
         else:
-            # Не подписан
             await callback.message.edit_text(
-                "🙏 **ПОДПИШИТЕСЬ НА КАНАЛ**\n\n"
-                f"{CHANNEL_USERNAME}\n\n"
-                "После подписки нажмите:",
+                "🙏 Подпишитесь на канал для получения расчета:",
                 reply_markup=get_subscription_keyboard()
             )
     except Exception as e:
-        await callback.answer("❌ Ошибка")
+        await callback.answer("❌ Ошибка проверки")
 
 @dp.callback_query(F.data == "check_subscription")
 async def handle_check_subscription(callback: CallbackQuery):
-    """Проверка подписки"""
+    """Проверка подписки после нажатия 'Я подписался'"""
     user_id = callback.from_user.id
     
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
             users_waiting_for_date.add(user_id)
-            await callback.message.edit_text(
-                "✅ **Спасибо за подписку!**\n\n"
-                "📅 Введите дату рождения (ДД.ММ.ГГГГ):"
-            )
+            await callback.message.edit_text("📅 Введите дату рождения (ДД.ММ.ГГГГ):")
         else:
             await callback.answer("❌ Вы еще не подписались!")
     except:
@@ -115,7 +117,7 @@ async def handle_check_subscription(callback: CallbackQuery):
 
 @dp.message(F.text)
 async def handle_birth_date(message: Message):
-    """Обработка даты рождения"""
+    """Обработка введенной даты рождения"""
     user_id = message.from_user.id
     
     if user_id not in users_waiting_for_date:
@@ -135,12 +137,7 @@ async def handle_birth_date(message: Message):
             f"ID: {user_id}"
         )
         
-        await message.answer(
-            "✅ **Заявка принята!**\n\n"
-            "Я свяжусь с вами для расчета в течение 24 часов.\n\n"
-            "С уважением, Елена 💫"
-        )
-        
+        await message.answer("✅ Заявка принята! Я свяжусь с вами скоро.")
         users_waiting_for_date.discard(user_id)
         
     except ValueError:
@@ -150,38 +147,40 @@ async def handle_birth_date(message: Message):
 
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
+    """Админ-панель - создание поста в канале"""
     if message.from_user.id != YOUR_TELEGRAM_ID:
         return
     
-    stats_text = f"📊 Пользователей ожидают ввод даты: {len(users_waiting_for_date)}"
+    stats_text = f"📊 Админ-панель\nОжидают ввод даты: {len(users_waiting_for_date)}"
     await message.answer(stats_text, reply_markup=get_admin_keyboard())
 
 @dp.callback_query(F.data == "publish_post")
 async def publish_post(callback: CallbackQuery):
+    """Публикация поста в канале"""
     if callback.from_user.id != YOUR_TELEGRAM_ID:
         return
     
     post_text = """
 🌟 **БЕСПЛАТНЫЙ РАСЧЕТ по матрице судьбы!**
 
-Узнайте:
-• Ваши сильные стороны
-• Кармические задачи
-• Предназначение
-
-Получите расчет! 👇
+Получите персональный расчет сейчас! 👇
     """
     
-    # Кнопка ведет прямо в бота с командой /start
-    channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=channel_post")]
-    ])
-    
     try:
-        await bot.send_message(CHANNEL_USERNAME, post_text, reply_markup=channel_keyboard)
-        await callback.answer("✅ Пост опубликован!")
+        await bot.send_message(CHANNEL_USERNAME, post_text, reply_markup=get_channel_keyboard())
+        await callback.answer("✅ Пост опубликован в канале!")
     except Exception as e:
         await callback.answer(f"❌ Ошибка: {e}")
+
+@dp.callback_query(F.data == "refresh_stats")
+async def refresh_stats(callback: CallbackQuery):
+    """Обновление статистики"""
+    if callback.from_user.id != YOUR_TELEGRAM_ID:
+        return
+    
+    stats_text = f"📊 Статистика обновлена\nОжидают ввод даты: {len(users_waiting_for_date)}"
+    await callback.message.edit_text(stats_text, reply_markup=get_admin_keyboard())
+    await callback.answer("✅ Обновлено")
 
 # === ЗАПУСК ===
 async def start_bot():

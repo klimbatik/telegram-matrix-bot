@@ -3,8 +3,7 @@ import asyncio
 import logging
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.filters import Command
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiohttp import web
 
 # === Логирование ===
@@ -13,191 +12,133 @@ logger = logging.getLogger(__name__)
 
 # === Переменные окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # Например: "@LenaMustest"
-YOUR_TELEGRAM_ID = int(os.getenv("YOUR_TELEGRAM_ID"))
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # "@LenaMustest"
+YOUR_TELEGRAM_ID_STR = os.getenv("YOUR_TELEGRAM_ID")
+
+if not all([BOT_TOKEN, CHANNEL_USERNAME, YOUR_TELEGRAM_ID_STR]):
+    raise ValueError("❌ Отсутствуют переменные окружения")
+
+try:
+    YOUR_TELEGRAM_ID = int(YOUR_TELEGRAM_ID_STR)
+except ValueError:
+    raise ValueError("❌ YOUR_TELEGRAM_ID должен быть числом")
 
 # === Инициализация бота ===
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+awaiting_birth_date = set()
+awaiting_admin_post = set()
 
-# Хранилище для отслеживания подписчиков
-subscribed_users = set()
-
-# === КЛАВИАТУРЫ ===
-
-# Основная клавиатура с кнопкой "ЗАБРАТЬ ГАЙД"
-def get_main_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ЗАБРАТЬ ГАЙД", callback_data="get_guide")]
-    ])
-
-# Клавиатура с проверкой подписки
-def get_subscription_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}")],
-        [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_subscription")]
-    ])
-
-# === ОБРАБОТЧИКИ ===
-
-@dp.message(Command("start"))
+# === /start — проверка подписки и запрос даты рождения ===
+@dp.message(F.text == "/start")
 async def start_handler(message: Message):
-    """Обработчик команды /start"""
-    welcome_text = """
-🌟 Добро пожаловать! 
-
-Я помогу вам получить полезный гайд по матрице судьбы.
-
-Нажмите кнопку ниже, чтобы получить доступ к материалам:
-    """
-    
-    await message.answer(welcome_text, reply_markup=get_main_keyboard())
-
-@dp.callback_query(F.data == "get_guide")
-async def handle_get_guide(callback: CallbackQuery):
-    """Обработчик кнопки ЗАБРАТЬ ГАЙД"""
-    user_id = callback.from_user.id
-    
-    # Проверяем подписку
+    user_id = message.from_user.id
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
-            # Пользователь подписан - выдаём гайд
-            await send_guide(callback)
-            subscribed_users.add(user_id)
+            awaiting_birth_date.add(user_id)
+            await message.answer(
+                "✨ Отлично! Чтобы сделать расчёт по матрице судьбы, напишите вашу дату рождения в формате:\n\n"
+                "<code>дд.мм.гггг</code>\n\n"
+                "Например: <code>15.08.1990</code>",
+                parse_mode="HTML"
+            )
         else:
-            # Пользователь не подписан - просим подписаться
-            await callback.message.edit_text(
-                "📋 Чтобы получить гайд, пожалуйста, подпишитесь на наш канал:\n\n"
-                f"➡️ {CHANNEL_USERNAME}\n\n"
-                "После подписки нажмите кнопку ниже:",
-                reply_markup=get_subscription_keyboard()
+            markup = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="Подписаться на канал",
+                    url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"
+                )]
+            ])
+            await message.answer(
+                "🙏 Пожалуйста, подпишитесь на канал, чтобы получить бесплатный расчёт по матрице судьбы!",
+                reply_markup=markup
             )
     except Exception as e:
-        logger.error(f"Ошибка проверки подписки: {e}")
-        await callback.answer("❌ Ошибка проверки подписки. Попробуйте позже.")
+        logger.error("Ошибка проверки подписки: %s", e)
+        await message.answer("⚠️ Ошибка. Попробуйте позже.")
 
-@dp.callback_query(F.data == "check_subscription")
-async def handle_check_subscription(callback: CallbackQuery):
-    """Проверка подписки после нажатия кнопки 'Я подписался'"""
-    user_id = callback.from_user.id
-    
-    try:
-        chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if chat_member.status in ["member", "administrator", "creator"]:
-            # Успешная подписка - выдаём гайд
-            await send_guide(callback)
-            subscribed_users.add(user_id)
-        else:
-            # Пользователь всё ещё не подписан
-            await callback.answer("❌ Вы ещё не подписались на канал!")
-    except Exception as e:
-        logger.error(f"Ошибка проверки подписки: {e}")
-        await callback.answer("❌ Ошибка проверки. Попробуйте позже.")
+# === Обработка даты рождения ===
+@dp.message(F.text)
+async def handle_text(message: Message):
+    user_id = message.from_user.id
 
-async def send_guide(callback: CallbackQuery):
-    """Отправка гайда пользователю"""
-    guide_text = """
-📚 **Ваш гайд готов!**
-
-Вот ссылка на материалы: [ссылка на ваш гайд]
-
-Также вы можете:
-• Получить персональный расчёт
-• Задать вопросы
-
-Для нового гайда нажмите /start
-    """
-    
-    # Удаляем предыдущее сообщение с кнопками
-    try:
-        await callback.message.delete()
-    except:
-        pass
-    
-    # Отправляем гайд
-    await callback.message.answer(guide_text)
-    await callback.answer("✅ Гайд отправлен!")
-
-# === УПРАВЛЕНИЕ СООБЩЕНИЯМИ В КАНАЛЕ ===
-
-@dp.message(F.chat.type == "channel")
-async def handle_channel_messages(message: Message):
-    """Автоматическое удаление служебных сообщений в канале"""
-    # Удаляем сообщения о смене названия канала
-    if message.service and any(keyword in str(message.service) for keyword in ["title", "name", "назван"]):
+    # Если ждём дату рождения
+    if user_id in awaiting_birth_date:
         try:
-            await message.delete()
-            logger.info("🗑 Удалено служебное сообщение о смене названия")
-        except Exception as e:
-            logger.error(f"Ошибка удаления сообщения: {e}")
+            birth_date = datetime.strptime(message.text.strip(), "%d.%m.%Y").date()
+            username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
+            await bot.send_message(
+                YOUR_TELEGRAM_ID,
+                f"🆕 Новый лид!\n\n"
+                f"Пользователь: {username}\n"
+                f"Дата рождения: <code>{birth_date.strftime('%d.%m.%Y')}</code>\n\n"
+                f"Теперь вы можете написать ему вручную.",
+                parse_mode="HTML"
+            )
+            awaiting_birth_date.discard(user_id)
+            await message.answer("✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.")
+        except ValueError:
+            await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
+        return
 
-# === ПАНЕЛЬ АДМИНИСТРАТОРА ===
+    # Если ждём пост от админа
+    if user_id in awaiting_admin_post:
+        post_text = message.text
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton("Получить расчёт", url=f"https://t.me/{bot._me.user.username}?start=matrix")]
+        ])
+        await bot.send_message(CHANNEL_USERNAME, post_text, reply_markup=markup)
+        awaiting_admin_post.discard(user_id)
+        await message.answer("✅ Пост отправлен в канал!")
+        return
 
-@dp.message(Command("admin"))
-async def admin_panel(message: Message):
-    """Панель управления для администратора"""
+    # Если ничего не ждём — перезапускаем сценарий
+    await start_handler(message)
+
+# === /admin — создание поста с кнопкой ===
+@dp.message(F.text == "/admin")
+async def admin_handler(message: Message):
     if message.from_user.id != YOUR_TELEGRAM_ID:
         return
-    
-    stats_text = f"""
-📊 **Статистика бота:**
-• Подписчиков получивших гайд: {len(subscribed_users)}
-• Канал: {CHANNEL_USERNAME}
-    """
-    
-    admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Опубликовать пост", callback_data="publish_post")],
-        [InlineKeyboardButton(text="🔄 Обновить статистику", callback_data="refresh_stats")]
-    ])
-    
-    await message.answer(stats_text, reply_markup=admin_keyboard)
+    awaiting_admin_post.add(message.from_user.id)
+    await message.answer("✏️ Напишите текст поста для канала. Я добавлю кнопку «Получить расчёт» автоматически.")
 
-@dp.callback_query(F.data == "publish_post")
-async def publish_guide_offer(callback: CallbackQuery):
-    """Публикация предложения в канал"""
-    if callback.from_user.id != YOUR_TELEGRAM_ID:
-        return
-    
-    post_text = """
-🎁 **БЕСПЛАТНЫЙ ГАЙД по матрице судьбы!**
-
-Узнайте:
-• Ваши сильные стороны
-• Кармические задачи
-• Предназначение по дате рождения
-
-Получите гайд прямо сейчас! 👇
-    """
-    
-    channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ЗАБРАТЬ ГАЙД", url=f"https://t.me/{(await bot.get_me()).username}?start=guide")]
-    ])
-    
-    try:
-        await bot.send_message(CHANNEL_USERNAME, post_text, reply_markup=channel_keyboard)
-        await callback.answer("✅ Пост опубликован в канале!")
-    except Exception as e:
-        await callback.answer(f"❌ Ошибка: {e}")
-
-# === HTTP-сервер для Render ===
+# === Фиктивный HTTP-сервер для Render (бесплатно!) ===
 async def health_check(request):
-    return web.Response(text="✅ Bot is running!")
+    return web.Response(text="✅ Bot is alive!")
 
 async def start_bot():
-    await dp.start_polling(bot)
+    try:
+        logger.info("🚀 Бот запущен!")
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error("❌ Ошибка бота: %s", e)
 
-if __name__ == "__main__":
-    # Веб-сервер для Render
+async def create_app():
     app = web.Application()
-    app.router.add_get('/health', health_check)
+    app.router.add_get("/", health_check)
+    app.router.add_get("/health", health_check)
+    return app
+
+async def main():
+    app = await create_app()
+    bot_task = asyncio.create_task(start_bot())
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
     
     port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
     
-    async def main():
-        await asyncio.gather(
-            web._run_app(app, host='0.0.0.0', port=port),
-            start_bot()
-        )
-    
-    asyncio.run(main())
+    logger.info(f"🌐 HTTP-сервер запущен на порту {port}")
+    await bot_task
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("👋 Бот остановлен")
+    except Exception as e:
+        logger.error("💥 Критическая ошибка: %s", e)

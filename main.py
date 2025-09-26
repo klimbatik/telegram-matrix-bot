@@ -51,12 +51,15 @@ def get_back_to_channel_keyboard():
 async def start_handler(message: Message):
     user_id = message.from_user.id
 
-    # Админ получает панель
-    if user_id == YOUR_TELEGRAM_ID:
+    # Проверяем, пришел ли запрос из канала (с параметром start=guide)
+    is_from_channel = "guide" in message.text if message.text else False
+
+    # Если это админ И запрос не из канала - показываем админ-панель
+    if user_id == YOUR_TELEGRAM_ID and not is_from_channel:
         await admin_panel(message)
         return
 
-    # Обычный пользователь — проверяем подписку
+    # Для всех остальных случаев (обычные пользователи или админ из канала) - стандартная логика
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
@@ -102,8 +105,8 @@ async def check_subscription_handler(callback: CallbackQuery):
 async def handle_text(message: Message):
     user_id = message.from_user.id
 
-    # Админ — игнорируем текст
-    if user_id == YOUR_TELEGRAM_ID:
+    # Админ — игнорируем текст (кроме случаев когда он тестирует функциональность)
+    if user_id == YOUR_TELEGRAM_ID and user_id not in awaiting_birth_date:
         return
 
     if user_id in awaiting_birth_date:

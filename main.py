@@ -29,7 +29,7 @@ awaiting_birth_date = set()
 # Основная клавиатура с кнопкой "ПОЛУЧИТЬ РАСЧЕТ"
 def get_main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", callback_data="get_calculation")]
+        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", callback_data="get_guide")]
     ])
 
 # Клавиатура с проверкой подписки
@@ -52,7 +52,7 @@ async def start_handler(message: Message):
     """Обработчик команды /start"""
     user_id = message.from_user.id
     
-    # Проверяем подписку при старте
+    # ПРОВЕРЯЕМ ПОДПИСКУ ПРИ СТАРТЕ
     try:
         chat_member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if chat_member.status in ["member", "administrator", "creator"]:
@@ -79,9 +79,9 @@ async def start_handler(message: Message):
         logger.error(f"Ошибка проверки подписки: {e}")
         await message.answer("❌ Ошибка проверки подписки. Попробуйте позже.")
 
-@dp.callback_query(F.data == "get_calculation")
-async def handle_get_calculation(callback: CallbackQuery):
-    """Обработчик кнопки ПОЛУЧИТЬ РАСЧЕТ из канала"""
+@dp.callback_query(F.data == "get_guide")
+async def handle_get_guide(callback: CallbackQuery):
+    """Обработчик кнопки ПОЛУЧИТЬ РАСЧЕТ"""
     user_id = callback.from_user.id
     
     # Проверяем подписку
@@ -133,21 +133,16 @@ async def handle_check_subscription(callback: CallbackQuery):
         logger.error(f"Ошибка проверки подписки: {e}")
         await callback.answer("❌ Ошибка проверки. Попробуйте позже.")
 
-# === Обработка даты рождения ===
+# === Обработка текста (дата рождения) ===
 @dp.message(F.content_type == "text")
 async def handle_text(message: Message):
-    user_id = message.from_user.id
-    
+    user = message.from_user
+    user_id = user.id
+
     if user_id in awaiting_birth_date:
         birth_date = message.text.strip()
-        
-        # Проверяем формат даты
-        if (len(birth_date) >= 8 and 
-            birth_date.replace('.', '').replace(' ', '').isdigit() and
-            birth_date.count('.') == 2):
-            
-            # Отправляем уведомление администратору
-            username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
+        if len(birth_date) >= 8 and birth_date.replace('.', '').replace(' ', '').isdigit():
+            username = f"@{user.username}" if user.username else f"ID{user_id}"
             await bot.send_message(
                 YOUR_TELEGRAM_ID,
                 f"🆕 Новый лид!\n\n"
@@ -156,30 +151,22 @@ async def handle_text(message: Message):
                 f"Теперь вы можете написать ему вручную.",
                 parse_mode="HTML"
             )
-            
-            # Удаляем пользователя из ожидания
             awaiting_birth_date.discard(user_id)
-            
-            # Отправляем подтверждение пользователю
             await message.answer(
-                "✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.\n\n"
-                "А пока можете вернуться в наш канал:",
+                "✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.",
                 reply_markup=get_back_to_channel_keyboard()
             )
         else:
-            await message.answer(
-                "❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>\n\n"
-                "Например: <code>15.08.1990</code>",
-                parse_mode="HTML"
-            )
+            await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
     else:
-        # Если пользователь не в процессе ввода даты, отправляем стартовое сообщение
         await start_handler(message)
 
 # === УПРАВЛЕНИЕ СООБЩЕНИЯМИ В КАНАЛЕ ===
+
 @dp.message(F.chat.type == "channel")
 async def handle_channel_messages(message: Message):
     """Автоматическое удаление служебных сообщений в канале"""
+    # Удаляем сообщения о смене названия канала
     if message.service and any(keyword in str(message.service) for keyword in ["title", "name", "назван"]):
         try:
             await message.delete()
@@ -188,6 +175,7 @@ async def handle_channel_messages(message: Message):
             logger.error(f"Ошибка удаления сообщения: {e}")
 
 # === ПАНЕЛЬ АДМИНИСТРАТОРА ===
+
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
     """Панель управления для администратора"""
@@ -195,9 +183,8 @@ async def admin_panel(message: Message):
         return
     
     stats_text = f"""
-📊 Статистика бота:
+  Статистика бота
 • Подписчиков получивших гайд: {len(subscribed_users)}
-• Ожидают ввода даты: {len(awaiting_birth_date)}
 • Канал: {CHANNEL_USERNAME}
     """
     
@@ -215,18 +202,11 @@ async def publish_guide_offer(callback: CallbackQuery):
         return
     
     post_text = """
-🎁 БЕСПЛАТНЫЙ РАСЧЕТ по матрице судьбы!
-
-Узнайте:
-• Ваши сильные стороны
-• Кармические задачи  
-• Предназначение по дате рождения
-
-Получите персональный расчет прямо сейчас! 👇
+МОЙ ТЕКСТ
     """
     
     channel_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=guide")]
+        [InlineKeyboardButton(text="ПОЛУЧИТЬ РАСЧЕТ", url=f"https://t.me/{(await bot.get_me()).username}?start=guide")]
     ])
     
     try:
@@ -234,22 +214,6 @@ async def publish_guide_offer(callback: CallbackQuery):
         await callback.answer("✅ Пост опубликован в канале!")
     except Exception as e:
         await callback.answer(f"❌ Ошибка: {e}")
-
-@dp.callback_query(F.data == "refresh_stats")
-async def refresh_stats(callback: CallbackQuery):
-    """Обновление статистики"""
-    if callback.from_user.id != YOUR_TELEGRAM_ID:
-        return
-    
-    stats_text = f"""
-📊 Статистика бота (обновлено):
-• Подписчиков получивших гайд: {len(subscribed_users)}
-• Ожидают ввода даты: {len(awaiting_birth_date)}
-• Канал: {CHANNEL_USERNAME}
-    """
-    
-    await callback.message.edit_text(stats_text)
-    await callback.answer("✅ Статистика обновлена!")
 
 # === HTTP-сервер для Render ===
 async def health_check(request):

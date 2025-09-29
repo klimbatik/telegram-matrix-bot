@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command, CommandStart
@@ -22,7 +23,7 @@ dp = Dispatcher()
 # === Состояния пользователей ===
 awaiting_birth_date = set()
 awaiting_question = set()
-user_data = {}  # временно хранит дату рождения до ввода вопроса
+user_data = {}  # для временного хранения даты
 
 # === Клавиатуры ===
 def get_subscription_keyboard():
@@ -45,20 +46,17 @@ def get_back_to_channel_keyboard():
         )]
     ])
 
-# === /start — входная точка ===
+# === Обработчик /start ===
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     user_id = message.from_user.id
 
-    # Проверяем, откуда пришёл пользователь
     is_from_channel = "guide" in message.text if message.text else False
 
-    # Админ видит панель управления, если зашёл не из канала
     if user_id == YOUR_TELEGRAM_ID and not is_from_channel:
         await admin_panel(message)
         return
 
-    # Проверка подписки
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if member.status in ("member", "administrator", "creator"):
@@ -80,7 +78,7 @@ async def start_handler(message: Message):
         logger.error("Ошибка проверки подписки: %s", e)
         await message.answer("❌ Ошибка. Попробуйте позже.")
 
-# === Обработка нажатия кнопки "Я подписался" ===
+# === Обработка кнопки "Я подписался" ===
 @dp.callback_query(F.data == "check_subscription")
 async def check_subscription_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -102,20 +100,39 @@ async def check_subscription_handler(callback: CallbackQuery):
         logger.error("Ошибка проверки подписки: %s", e)
         await callback.answer("❌ Ошибка проверки. Попробуйте позже.")
 
-# === Обработка текстовых сообщений: дата → вопрос → отправка ===
+# === Обработка текста: дата → вопрос → отправка ===
 @dp.message(F.text)
 async def handle_text(message: Message):
     user_id = message.from_user.id
 
-    # Админа пропускаем, если он не в процессе
     if user_id == YOUR_TELEGRAM_ID and user_id not in awaiting_birth_date and user_id not in awaiting_question:
         return
 
     # Этап 1: ожидание даты рождения
     if user_id in awaiting_birth_date:
         birth_date = message.text.strip()
-        if len(birth_date) >= 8 and birth_date.replace('.', '').replace(' ', '').isdigit():
-            user_data[user_id] = birth_date
+
+        try:
+            parts = [p.strip() for p in birth_date.split('.')]
+            if len(parts) != 3:
+                raise ValueError("Wrong format")
+
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+
+            # Проверяем диапазоны
+            if not (1 <= day <= 31):
+                raise ValueError("Day out of range")
+            if not (1 <= month <= 12):
+                raise ValueError("Month out of range")
+            if not (1900 <= year <= 2025):
+                raise ValueError("Year out of range")
+
+            # Проверяем, существует ли такая дата
+            valid_date = datetime(year, month, day)
+            formatted_date = f"{valid_date.day:02d}.{valid_date.month:02d}.{valid_date.year:04d}"
+
+            # Сохраняем и переходим к вопросу
+            user_data[user_id] = formatted_date
             awaiting_birth_date.discard(user_id)
             awaiting_question.add(user_id)
 
@@ -123,9 +140,12 @@ async def handle_text(message: Message):
                 "📝 Отлично! Теперь напишите, какой у вас вопрос?\n\n"
                 "Например: «Будет ли ребёнок?», «Когда переезд?», «Что ждёт в работе?»"
             )
-        else:
+
+        except:
             await message.answer(
-                "❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>",
+                "Ой, по моему, с датой ошибочка. Пожалуйста, введите корректную дату.\n\n"
+                "Формат: <code>дд.мм.гггг</code>\n\n"
+                "Например: <code>15.08.1990</code>",
                 parse_mode="HTML"
             )
         return
@@ -137,7 +157,6 @@ async def handle_text(message: Message):
 
         username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
 
-        # Отправляем лид админу (тебе)
         try:
             await bot.send_message(
                 YOUR_TELEGRAM_ID,
@@ -158,7 +177,7 @@ async def handle_text(message: Message):
         )
         return
 
-    # Если не в процессе — перезапускаем сценарий
+    # Если не в процессе — перезапускаем
     await start_handler(message)
 
 # === Админ-панель ===
@@ -252,7 +271,7 @@ async def start_http_server():
     await site.start()
     print(f"HTTP server started on port {port}")
 
-# === Запуск бота ===
+# === Запуск ===
 async def main():
     await asyncio.gather(
         start_http_server(),

@@ -124,11 +124,19 @@ async def handle_text(message: Message):
                 raise ValueError("Day out of range")
             if not (1 <= month <= 12):
                 raise ValueError("Month out of range")
-            if not (1900 <= year <= 2025):
+            
+            # ИСПРАВЛЕНИЕ: проверяем, что год не больше текущего
+            current_year = datetime.now().year
+            if not (1900 <= year <= current_year):
                 raise ValueError("Year out of range")
 
             # Проверяем, существует ли такая дата
             valid_date = datetime(year, month, day)
+            
+            # Дополнительная проверка: дата не должна быть в будущем
+            if valid_date > datetime.now():
+                raise ValueError("Date in future")
+                
             formatted_date = f"{valid_date.day:02d}.{valid_date.month:02d}.{valid_date.year:04d}"
 
             # Сохраняем и переходим к вопросу
@@ -143,7 +151,7 @@ async def handle_text(message: Message):
 
         except:
             await message.answer(
-                "Ой, по моему, с датой ошибочка. Пожалуйста, введите корректную дату.\n\n"
+                "❌ Ой, по моему, с датой ошибочка. Пожалуйста, введите корректную дату.\n\n"
                 "Формат: <code>дд.мм.гггг</code>\n\n"
                 "Например: <code>15.08.1990</code>",
                 parse_mode="HTML"

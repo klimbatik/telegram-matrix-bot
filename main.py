@@ -22,9 +22,12 @@ dp = Dispatcher()
 
 # Списки состояний
 awaiting_birth_date = set()
+awaiting_question = set()
+
+# Храним дату до ввода вопроса
+user_data = {}
 
 # === Вспомогательные клавиатуры ===
-
 def get_subscription_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
@@ -46,7 +49,6 @@ def get_back_to_channel_keyboard():
     ])
 
 # === Обработчик /start (включая deep link) ===
-
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     user_id = message.from_user.id
@@ -66,10 +68,10 @@ async def start_handler(message: Message):
             awaiting_birth_date.add(user_id)
             await message.answer(
                 "🖐️ Привет! Отлично, что Вы здесь.\n\n"
-    "Этот метод расчета может видеть циклы, точки сдвига, угрозы и возможности.\n\n"
-    "📌 Чтобы начать — введите свою дату рождения в формате:\n\n"
-    "<code>дд.мм.гггг</code>\n\n"
-    "(например: <code>15.08.1990</code>)",
+                "Этот метод расчета может видеть циклы, точки сдвига, угрозы и возможности.\n\n"
+                "📌 Чтобы начать — введите свою дату рождения в формате:\n\n"
+                "<code>дд.мм.гггг</code>\n\n"
+                "(например: <code>15.08.1990</code>)",
                 parse_mode="HTML"
             )
         else:
@@ -91,10 +93,10 @@ async def check_subscription_handler(callback: CallbackQuery):
             awaiting_birth_date.add(user_id)
             await callback.message.edit_text(
                 "🖐️ Привет! Отлично, что Вы здесь.\n\n"
-    "Этот метод расчета может видеть циклы, точки сдвига, угрозы и возможности.\n\n"
-    "📌 Чтобы начать — введите свою дату рождения в формате:\n\n"
-    "<code>дд.мм.гггг</code>\n\n"
-    "(например: <code>15.08.1990</code>)",
+                "Этот метод расчета может видеть циклы, точки сдвига, угрозы и возможности.\n\n"
+                "📌 Чтобы начать — введите свою дату рождения в формате:\n\n"
+                "<code>дд.мм.гггг</code>\n\n"
+                "(например: <code>15.08.1990</code>)",
                 parse_mode="HTML"
             )
         else:
@@ -103,45 +105,67 @@ async def check_subscription_handler(callback: CallbackQuery):
         logger.error("Ошибка проверки подписки: %s", e)
         await callback.answer("❌ Ошибка проверки. Попробуйте позже.")
 
-# === Обработка даты рождения ===
-
+# === Обработка текста: дата → вопрос → отправка ===
 @dp.message(F.text)
 async def handle_text(message: Message):
     user_id = message.from_user.id
 
     # Админ — игнорируем текст (кроме случаев когда он тестирует функциональность)
-    if user_id == YOUR_TELEGRAM_ID and user_id not in awaiting_birth_date:
+    if user_id == YOUR_TELEGRAM_ID and user_id not in awaiting_birth_date and user_id not in awaiting_question:
         return
 
+    # Если пользователь в списке ожидания вопроса
+    if user_id in awaiting_question:
+        question = message.text.strip()
+        birth_date = user_data.pop(user_id, "не указана")
+
+        username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
+
+        await bot.send_message(
+            YOUR_TELEGRAM_ID,
+            f"🆕 Новый лид!\n\n"
+            f"Пользователь: {username}\n"
+            f"Дата рождения: <code>{birth_date}</code>\n"
+            f"Вопрос: {question}\n\n"
+            f"Теперь вы можете написать ему вручную.",
+            parse_mode="HTML"
+        )
+
+        awaiting_question.discard(user_id)
+        await message.answer(
+            "✅ Спасибо! Ваша заявка принята. Ответ по расчету я отправлю вам в личные сообщения.",
+            reply_markup=get_back_to_channel_keyboard()
+        )
+        return
+
+    # Если пользователь вводит дату рождения
     if user_id in awaiting_birth_date:
         birth_date = message.text.strip()
         if len(birth_date) >= 8 and birth_date.replace('.', '').replace(' ', '').isdigit():
-            username = f"@{message.from_user.username}" if message.from_user.username else f"ID{user_id}"
-            await bot.send_message(
-                YOUR_TELEGRAM_ID,
-                f"🆕 Новый лид!\n\n"
-                f"Пользователь: {username}\n"
-                f"Дата рождения: <code>{birth_date}</code>\n\n"
-                f"Теперь вы можете написать ему вручную.",
-                parse_mode="HTML"
-            )
+            user_data[user_id] = birth_date
             awaiting_birth_date.discard(user_id)
+            awaiting_question.add(user_id)
+
             await message.answer(
-                "✅ Спасибо! Ваша заявка принята. Ответ по расчету я отправлю вам в личные сообщения.",
-                reply_markup=get_back_to_channel_keyboard()
+                "📝 Отлично! Теперь напишите, какой у вас вопрос?\n\n"
+                "Например: «Будет ли ребёнок?», «Когда переезд?», «Что ждёт в работе?»"
             )
         else:
-            await message.answer("❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>", parse_mode="HTML")
-    else:
-        # Если не в процессе — перезапускаем сценарий
-        await start_handler(message)
+            await message.answer(
+                "❌ Пожалуйста, введите дату в формате <code>дд.мм.гггг</code>",
+                parse_mode="HTML"
+            )
+        return
+
+    # Если не в процессе — перезапускаем сценарий
+    await start_handler(message)
 
 # === Админ-панель ===
-
 async def admin_panel(message: Message):
     stats_text = f"""
 📊 Админ-панель
 Ожидают ввод даты: {len(awaiting_birth_date)}
+Ожидают ввод вопроса: {len(awaiting_question)}
 Канал: {CHANNEL_USERNAME}
     """
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -197,7 +221,7 @@ async def publish_post_handler(callback: CallbackQuery):
 
 ЖМИ👇👇👇"""
 
-    bot_username = "ElenaMusBot"  # Ваш бот ElenaMusBot
+    bot_username = "ElenaMusBot"
     markup = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="ПОЛУЧИТЬ РАСЧЕТ",
@@ -213,14 +237,13 @@ async def publish_post_handler(callback: CallbackQuery):
         await callback.answer("❌ Не удалось опубликовать пост.")
 
 # === HTTP-сервер для Render ===
-
 async def health_check(request):
     return web.Response(text="OK")
 
 async def start_http_server():
     app = web.Application()
     app.router.add_get('/health', health_check)
-    app.router.add_get('/', health_check)  # Добавляем корневой путь тоже
+    app.router.add_get('/', health_check)
     
     port = int(os.environ.get("PORT", 10000))
     runner = web.AppRunner(app)
@@ -230,7 +253,6 @@ async def start_http_server():
     print(f"HTTP server started on port {port}")
 
 async def main():
-    # Запускаем HTTP-сервер и бота параллельно
     await asyncio.gather(
         start_http_server(),
         dp.start_polling(bot)
@@ -238,6 +260,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-

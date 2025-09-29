@@ -141,7 +141,7 @@ async def handle_text(message: Message):
         )
         awaiting_question.discard(user_id)
         await message.answer(
-            "✅ Спасибо! Ваша заявка принята. Скоро я свяжусь с вами для расчёта.",
+            "✅ Спасибо! Ваша заявка принята. Ответ по расчету я отправлю вам в личные сообщения.",
             reply_markup=get_back_to_channel_keyboard()
         )
     else:
@@ -251,5 +251,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 

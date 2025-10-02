@@ -5,6 +5,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command, CommandStart
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
 # === Логирование ===
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # === Переменные окружения ===
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # "@LenaMustest"
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME")  # "@master_mystic"
 YOUR_TELEGRAM_ID = int(os.getenv("YOUR_TELEGRAM_ID"))  # 1030370280
 
 # === Инициализация бота ===
@@ -139,7 +140,7 @@ async def handle_text(message: Message):
                 
             formatted_date = f"{valid_date.day:02d}.{valid_date.month:02d}.{valid_date.year:04d}"
 
-            # Сохраняем и переходим к вопросу
+            # Сохраняем и переходин к вопросу
             user_data[user_id] = formatted_date
             awaiting_birth_date.discard(user_id)
             awaiting_question.add(user_id)
@@ -246,7 +247,7 @@ async def publish_post_handler(callback: CallbackQuery):
 
 Если вам понравится — можно заказать полный анализ по системе ТЖС, где я раскрою все аспекты вашей жизни всего за 2000 рублей.
 
-📩 Хотите попробовать?
+📩 Хотите попробовать? 
 ЖМИТЕ КНОПКУ НИЖЕ👇👇👇 
 
 Это бот, который спросит у вас дату рождения и вопрос, который вас волнует и перенаправит информацию мне. Далее, когда анализ будет готов, я  свяжусь с вами.
@@ -271,29 +272,37 @@ async def publish_post_handler(callback: CallbackQuery):
         logger.error("Ошибка публикации: %s", e)
         await callback.answer("❌ Не удалось опубликовать пост.")
 
+# === Webhook настройки ===
+async def on_startup(app):
+    webhook_url = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"
+    await bot.set_webhook(webhook_url)
+    logger.info(f"Webhook set to: {webhook_url}")
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    await bot.session.close()
+    logger.info("Bot stopped")
+
 # === HTTP-сервер для Render ===
 async def health_check(request):
     return web.Response(text="OK")
 
-async def start_http_server():
+async def create_app():
     app = web.Application()
     app.router.add_get('/health', health_check)
     app.router.add_get('/', health_check)
-    port = int(os.environ.get("PORT", 10000))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"HTTP server started on port {port}")
+    
+    # Webhook route
+    webhook_route = SimpleRequestHandler(dispatcher=dp, bot=bot)
+    webhook_route.register(app, path="/webhook")
+    
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    
+    return app
 
 # === Запуск ===
-async def main():
-    await asyncio.gather(
-        start_http_server(),
-        dp.start_polling(bot)
-    )
-
 if __name__ == "__main__":
-    asyncio.run(main())
-
-
+    app = asyncio.run(create_app())
+    port = int(os.environ.get("PORT", 10000))
+    web.run_app(app, host="0.0.0.0", port=port)
